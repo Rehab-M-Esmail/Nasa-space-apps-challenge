@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality Map Pinner</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <style>
+        /* CSS to define the map size */
+        #map {
+            height: 400px;
+            width: 100%;
+            border: 1px solid #ccc;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin-top: 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #aqiResult {
+            margin-top: 20px;
+            padding: 15px;
+            border: 2px solid #28a745;
+            background-color: #e2ffed;
+            font-size: 1.1em;
+            font-weight: bold;
+            display: none;
+            /* Hide until we have a result */
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Pin Location for Air Quality Index (AQI)</h1>
+        <p>Click anywhere on the map below to select a location.</p>
+
+        <div id="map"></div>
+
+        <p>Selected Coordinates: <strong><span id="coordsDisplay">None selected.</span></strong></p>
+
+        <button id="getDataBtn">Get AQI Data</button>
+
+        <div id="aqiResult"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <script>
+        // --- 1. State Variables & DOM Elements ---
+        let selectedLat = null;
+        let selectedLng = null;
+        let marker = null;
+        const coordsDisplay = document.getElementById('coordsDisplay');
+        const aqiResultDisplay = document.getElementById('aqiResult'); // Reference to the new element
+
+        // --- 2. Initialize the Map (same as before) ---
+        const map = L.map('map').setView([40.7128, -74.0060], 10);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+
+
+        // --- 3. Handle Map Click (same as before) ---
+        map.on('click', function (e) {
+            selectedLat = e.latlng.lat;
+            selectedLng = e.latlng.lng;
+
+            if (marker) { map.removeLayer(marker); }
+
+            marker = L.marker([selectedLat, selectedLng]).addTo(map)
+                .bindPopup("Location Pinned")
+                .openPopup();
+
+            coordsDisplay.textContent = `${selectedLat.toFixed(6)}, ${selectedLng.toFixed(6)}`;
+            aqiResultDisplay.style.display = 'none'; // Hide previous results
+            aqiResultDisplay.innerHTML = '';
+        });
+
+
+        // --- 4. Handle Button Click and Send Data to Backend ---
+        document.getElementById('getDataBtn').addEventListener('click', async () => {
+            if (selectedLat === null || selectedLng === null) {
+                alert("Please click on the map to pin a location first!");
+                return;
+            }
+
+            const dataToSend = {
+                latitude: selectedLat,
+                longitude: selectedLng
+            };
+
+            // *** CRITICAL CHANGE: Updated to match the Flask endpoint ***
+            const backendUrl = 'http://localhost:3000/predict';
+
+            aqiResultDisplay.innerHTML = 'Fetching data...';
+            aqiResultDisplay.style.display = 'block';
+
+            try {
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(dataToSend)
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Success: Use the new aqi_level key from the JSON response
+                    aqiResultDisplay.style.borderColor = '#28a745';
+                    aqiResultDisplay.style.backgroundColor = '#e2ffed';
+                    aqiResultDisplay.innerHTML = `
+                        ✅ **AQI Level Found!**<br>
+                        Level: ${result.aqi_level}
+                    `;
+                } else {
+                    // Error response from the server
+                    aqiResultDisplay.style.borderColor = '#dc3545';
+                    aqiResultDisplay.style.backgroundColor = '#ffe2e6';
+                    aqiResultDisplay.innerHTML = `
+                        ❌ **Error:** Could not retrieve AQI.<br>
+                        Details: ${result.error || 'Check server logs.'}
+                    `;
+                }
+            } catch (error) {
+                // Network error
+                aqiResultDisplay.style.borderColor = '#ffc107';
+                aqiResultDisplay.style.backgroundColor = '#fff3cd';
+                aqiResultDisplay.innerHTML = `
+                    ⚠️ **Network Error:** Could not connect to the Python backend. <br>
+                    Make sure 'app.py' is running on port 3000.
+                `;
+            }
+        });
+
+    </script>
+</body>
+
+</html>
